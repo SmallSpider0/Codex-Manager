@@ -68,6 +68,7 @@ pub(in super::super) fn candidate_skip_reason_for_proxy(
     idx: usize,
     candidate_count: usize,
     account_max_inflight: usize,
+    local_direct_mode: bool,
 ) -> Option<CandidateSkipReason> {
     // 中文注释：当用户手动“切到当前”后，首候选应持续优先命中；
     // 仅在真实请求失败时由上游流程自动清除手动锁定，再回退常规轮转。
@@ -75,7 +76,7 @@ pub(in super::super) fn candidate_skip_reason_for_proxy(
         && super::super::super::manual_preferred_account()
             .as_deref()
             .is_some_and(|manual_id| manual_id == account_id);
-    if is_manual_preferred_head {
+    if is_manual_preferred_head && !local_direct_mode {
         return None;
     }
 
@@ -87,9 +88,10 @@ pub(in super::super) fn candidate_skip_reason_for_proxy(
 
     if account_max_inflight > 0
         && super::super::super::account_inflight_count(account_id) >= account_max_inflight
-        && has_more_candidates
+        && (local_direct_mode || has_more_candidates)
     {
-        // 中文注释：并发上限是软约束，最后一个候选仍要尝试，避免把可恢复抖动直接放大成全局不可用。
+        // 中文注释：relay_compat 里并发上限是软约束，最后一个候选仍可尝试；
+        // local_direct 则按硬上限选下一个账号，全部满了直接返回 busy。
         super::super::super::record_gateway_failover_attempt();
         return Some(CandidateSkipReason::Inflight);
     }
@@ -99,6 +101,7 @@ pub(in super::super) fn candidate_skip_reason_for_proxy(
 #[cfg(test)]
 mod tests {
     use super::free_account_model_override;
+    use crate::gateway::metrics;
     use codexmanager_core::storage::{now_ts, Account, Storage, Token, UsageSnapshotRecord};
 
     /// 函数 `free_account_model_override_uses_configured_model_for_free_account`
@@ -327,5 +330,70 @@ mod tests {
         let _ = crate::gateway::set_free_account_max_model(&original);
 
         assert_eq!(actual, None);
+    }
+
+    /// 函数 `local_direct_without_pressure_keeps_candidate_routable`
+    ///
+    /// 作者: gaohongshun
+    ///
+    /// 时间: 2026-04-02
+    ///
+    /// # 参数
+    /// 无
+    ///
+    /// # 返回
+    /// 无
+    #[test]
+    fn local_direct_without_pressure_keeps_candidate_routable() {
+        let _guard = crate::test_env_guard();
+
+        let reason = super::candidate_skip_reason_for_proxy("acc-last", 1, 2, 2, true);
+
+        assert_eq!(reason, None);
+    }
+
+    /// 函数 `relay_compat_keeps_last_candidate_soft_overflow`
+    ///
+    /// 作者: gaohongshun
+    ///
+    /// 时间: 2026-04-02
+    ///
+    /// # 参数
+    /// 无
+    ///
+    /// # 返回
+    /// 无
+    #[test]
+    fn relay_compat_keeps_last_candidate_soft_overflow() {
+        let _guard = crate::test_env_guard();
+
+        let reason = super::candidate_skip_reason_for_proxy("acc-last", 1, 2, 2, false);
+
+        assert_eq!(reason, None);
+    }
+
+    /// 函数 `local_direct_inflight_limit_skips_last_candidate_when_counter_is_full`
+    ///
+    /// 作者: gaohongshun
+    ///
+    /// 时间: 2026-04-02
+    ///
+    /// # 参数
+    /// 无
+    ///
+    /// # 返回
+    /// 无
+    #[test]
+    fn local_direct_inflight_limit_skips_last_candidate_when_counter_is_full() {
+        let _guard = crate::test_env_guard();
+        let guard_a = metrics::acquire_account_inflight("acc-last");
+        let guard_b = metrics::acquire_account_inflight("acc-last");
+
+        let reason = super::candidate_skip_reason_for_proxy("acc-last", 1, 2, 2, true);
+
+        drop(guard_a);
+        drop(guard_b);
+
+        assert_eq!(reason, Some(super::CandidateSkipReason::Inflight));
     }
 }

@@ -33,6 +33,8 @@ export const useAppStore = create<AppState>((set) => ({
     serviceAddr: "localhost:48760",
     serviceListenMode: "loopback",
     serviceListenModeOptions: ["loopback", "all_interfaces"],
+    gatewayMode: "local_direct",
+    gatewayModeOptions: ["local_direct", "relay_compat"],
     routeStrategy: "ordered",
     routeStrategyOptions: ["ordered", "balanced"],
     freeAccountMaxModel: "auto",

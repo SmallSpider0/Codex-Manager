@@ -1289,6 +1289,10 @@ export function normalizeAppSettings(payload: unknown): AppSettings {
     serviceListenModeOptions: asArray(source.serviceListenModeOptions).map((item) =>
       asString(item)
     ),
+    gatewayMode: asString(source.gatewayMode) || "local_direct",
+    gatewayModeOptions: asArray(source.gatewayModeOptions).map((item) =>
+      asString(item)
+    ),
     routeStrategy: asString(source.routeStrategy) || "ordered",
     routeStrategyOptions: asArray(source.routeStrategyOptions).map((item) =>
       asString(item)

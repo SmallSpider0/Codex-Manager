@@ -24,6 +24,7 @@ static STRICT_REQUEST_PARAM_ALLOWLIST: AtomicBool =
     AtomicBool::new(DEFAULT_STRICT_REQUEST_PARAM_ALLOWLIST);
 static ENABLE_REQUEST_COMPRESSION: AtomicBool = AtomicBool::new(DEFAULT_ENABLE_REQUEST_COMPRESSION);
 static UPSTREAM_PROXY_URL: OnceLock<RwLock<Option<String>>> = OnceLock::new();
+static GATEWAY_MODE: OnceLock<RwLock<String>> = OnceLock::new();
 static FREE_ACCOUNT_MAX_MODEL: OnceLock<RwLock<String>> = OnceLock::new();
 static ORIGINATOR: OnceLock<RwLock<String>> = OnceLock::new();
 static CODEX_USER_AGENT_VERSION: OnceLock<RwLock<String>> = OnceLock::new();
@@ -44,6 +45,9 @@ const DEFAULT_TRACE_BODY_PREVIEW_MAX_BYTES: usize = 0;
 const DEFAULT_FRONT_PROXY_MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
 const DEFAULT_FREE_ACCOUNT_MAX_MODEL: &str = "auto";
 const DEFAULT_CODEX_USER_AGENT_VERSION: &str = "0.101.0";
+pub(crate) const GATEWAY_MODE_LOCAL_DIRECT: &str = "local_direct";
+pub(crate) const GATEWAY_MODE_RELAY_COMPAT: &str = "relay_compat";
+const DEFAULT_GATEWAY_MODE: &str = GATEWAY_MODE_LOCAL_DIRECT;
 const MAX_UPSTREAM_PROXY_POOL_SIZE: usize = 5;
 
 const ENV_REQUEST_GATE_WAIT_TIMEOUT_MS: &str = "CODEXMANAGER_REQUEST_GATE_WAIT_TIMEOUT_MS";
@@ -59,6 +63,7 @@ const ENV_TOKEN_EXCHANGE_CLIENT_ID: &str = "CODEXMANAGER_CLIENT_ID";
 const ENV_TOKEN_EXCHANGE_ISSUER: &str = "CODEXMANAGER_ISSUER";
 const ENV_PROXY_LIST: &str = "CODEXMANAGER_PROXY_LIST";
 const ENV_UPSTREAM_PROXY_URL: &str = "CODEXMANAGER_UPSTREAM_PROXY_URL";
+const ENV_GATEWAY_MODE: &str = "CODEXMANAGER_GATEWAY_MODE";
 const ENV_FREE_ACCOUNT_MAX_MODEL: &str = "CODEXMANAGER_FREE_ACCOUNT_MAX_MODEL";
 const ENV_ORIGINATOR: &str = "CODEXMANAGER_ORIGINATOR";
 const ENV_RESIDENCY_REQUIREMENT: &str = "CODEXMANAGER_RESIDENCY_REQUIREMENT";
@@ -151,6 +156,9 @@ pub(crate) fn fresh_upstream_client() -> Client {
 /// 返回函数执行结果
 pub(crate) fn upstream_client_for_account(account_id: &str) -> Client {
     ensure_runtime_config_loaded();
+    if is_local_direct_mode() {
+        return upstream_client();
+    }
     let cached =
         crate::lock_utils::read_recover(upstream_client_pool_lock(), "upstream_client_pool")
             .client_for_account(account_id)
@@ -171,6 +179,9 @@ pub(crate) fn upstream_client_for_account(account_id: &str) -> Client {
 /// 返回函数执行结果
 pub(crate) fn fresh_upstream_client_for_account(account_id: &str) -> Client {
     ensure_runtime_config_loaded();
+    if is_local_direct_mode() {
+        return build_upstream_client();
+    }
     let pool = crate::lock_utils::read_recover(upstream_client_pool_lock(), "upstream_client_pool");
     if let Some(proxy_url) = pool.proxy_for_account(account_id) {
         return build_upstream_client_with_proxy(Some(proxy_url));
@@ -437,6 +448,60 @@ pub(super) fn upstream_proxy_url() -> Option<String> {
     current_upstream_proxy_url()
 }
 
+/// 函数 `current_gateway_mode`
+///
+/// 作者: gaohongshun
+///
+/// 时间: 2026-04-02
+///
+/// # 参数
+/// 无
+///
+/// # 返回
+/// 返回函数执行结果
+pub(crate) fn current_gateway_mode() -> String {
+    ensure_runtime_config_loaded();
+    current_gateway_mode_cached()
+}
+
+/// 函数 `is_local_direct_mode`
+///
+/// 作者: gaohongshun
+///
+/// 时间: 2026-04-02
+///
+/// # 参数
+/// 无
+///
+/// # 返回
+/// 返回函数执行结果
+pub(crate) fn is_local_direct_mode() -> bool {
+    ensure_runtime_config_loaded();
+    is_local_direct_mode_cached()
+}
+
+/// 函数 `set_gateway_mode`
+///
+/// 作者: gaohongshun
+///
+/// 时间: 2026-04-02
+///
+/// # 参数
+/// - mode: 参数 mode
+///
+/// # 返回
+/// 返回函数执行结果
+pub(crate) fn set_gateway_mode(mode: &str) -> Result<String, String> {
+    ensure_runtime_config_loaded();
+    let normalized = normalize_gateway_mode(mode)?.to_string();
+    std::env::set_var(ENV_GATEWAY_MODE, normalized.as_str());
+    let mut cached = crate::lock_utils::write_recover(gateway_mode_cell(), "gateway_mode");
+    *cached = normalized.clone();
+    drop(cached);
+    refresh_upstream_clients_from_runtime_config();
+    Ok(normalized)
+}
+
 /// 函数 `current_free_account_max_model`
 ///
 /// 作者: gaohongshun
@@ -451,6 +516,36 @@ pub(super) fn upstream_proxy_url() -> Option<String> {
 pub(crate) fn current_free_account_max_model() -> String {
     ensure_runtime_config_loaded();
     crate::lock_utils::read_recover(free_account_max_model_cell(), "free_account_max_model").clone()
+}
+
+/// 函数 `current_gateway_mode_cached`
+///
+/// 作者: gaohongshun
+///
+/// 时间: 2026-04-02
+///
+/// # 参数
+/// 无
+///
+/// # 返回
+/// 返回函数执行结果
+fn current_gateway_mode_cached() -> String {
+    crate::lock_utils::read_recover(gateway_mode_cell(), "gateway_mode").clone()
+}
+
+/// 函数 `is_local_direct_mode_cached`
+///
+/// 作者: gaohongshun
+///
+/// 时间: 2026-04-02
+///
+/// # 参数
+/// 无
+///
+/// # 返回
+/// 返回函数执行结果
+fn is_local_direct_mode_cached() -> bool {
+    current_gateway_mode_cached() == GATEWAY_MODE_LOCAL_DIRECT
 }
 
 /// 函数 `current_originator`
@@ -837,6 +932,14 @@ pub(super) fn reload_from_env() {
     *cached_proxy_url = converted_proxy;
     drop(cached_proxy_url);
 
+    let gateway_mode = env_non_empty(ENV_GATEWAY_MODE)
+        .and_then(|value| normalize_gateway_mode(value.as_str()).ok())
+        .unwrap_or(DEFAULT_GATEWAY_MODE);
+    let mut cached_gateway_mode =
+        crate::lock_utils::write_recover(gateway_mode_cell(), "gateway_mode");
+    *cached_gateway_mode = gateway_mode.to_string();
+    drop(cached_gateway_mode);
+
     let free_account_max_model = env_non_empty(ENV_FREE_ACCOUNT_MAX_MODEL)
         .and_then(|value| normalize_model_slug(value.as_str()).ok())
         .unwrap_or_else(|| DEFAULT_FREE_ACCOUNT_MAX_MODEL.to_string());
@@ -951,6 +1054,9 @@ fn refresh_upstream_clients_from_runtime_config() {
 /// # 返回
 /// 返回函数执行结果
 fn build_upstream_client_pool() -> UpstreamClientPool {
+    if is_local_direct_mode_cached() {
+        return UpstreamClientPool::default();
+    }
     if current_upstream_proxy_url().is_some() {
         return UpstreamClientPool::default();
     }
@@ -997,6 +1103,21 @@ fn build_upstream_client_pool() -> UpstreamClientPool {
 /// 返回函数执行结果
 fn upstream_proxy_url_cell() -> &'static RwLock<Option<String>> {
     UPSTREAM_PROXY_URL.get_or_init(|| RwLock::new(None))
+}
+
+/// 函数 `gateway_mode_cell`
+///
+/// 作者: gaohongshun
+///
+/// 时间: 2026-04-02
+///
+/// # 参数
+/// 无
+///
+/// # 返回
+/// 返回函数执行结果
+fn gateway_mode_cell() -> &'static RwLock<String> {
+    GATEWAY_MODE.get_or_init(|| RwLock::new(DEFAULT_GATEWAY_MODE.to_string()))
 }
 
 /// 函数 `free_account_max_model_cell`
@@ -1381,6 +1502,27 @@ fn normalize_upstream_proxy_url(proxy_url: Option<&str>) -> Result<Option<String
         Proxy::all(value.as_str()).map_err(|err| format!("invalid proxy url: {err}"))?;
     }
     Ok(normalized)
+}
+
+/// 函数 `normalize_gateway_mode`
+///
+/// 作者: gaohongshun
+///
+/// 时间: 2026-04-02
+///
+/// # 参数
+/// - raw: 参数 raw
+///
+/// # 返回
+/// 返回函数执行结果
+fn normalize_gateway_mode(raw: &str) -> Result<&'static str, String> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "" | GATEWAY_MODE_LOCAL_DIRECT | "local-direct" | "direct" => Ok(GATEWAY_MODE_LOCAL_DIRECT),
+        GATEWAY_MODE_RELAY_COMPAT | "relay-compat" | "relay" | "compat" => {
+            Ok(GATEWAY_MODE_RELAY_COMPAT)
+        }
+        _ => Err("gatewayMode must be local_direct or relay_compat".to_string()),
+    }
 }
 
 /// 函数 `parse_proxy_list_env`

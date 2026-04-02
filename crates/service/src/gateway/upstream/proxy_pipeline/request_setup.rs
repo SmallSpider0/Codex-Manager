@@ -43,12 +43,20 @@ pub(in super::super) fn prepare_request_setup(
     model_for_log: Option<&str>,
     trace_id: &str,
 ) -> UpstreamRequestSetup {
+    let local_direct_mode = super::super::super::is_local_direct_mode();
     let upstream_base = super::super::super::resolve_upstream_base_url();
-    let upstream_fallback_base =
-        super::super::super::resolve_upstream_fallback_base_url(upstream_base.as_str());
-    let (url, url_alt) =
+    let upstream_fallback_base = if local_direct_mode {
+        None
+    } else {
+        super::super::super::resolve_upstream_fallback_base_url(upstream_base.as_str())
+    };
+    let (url, computed_url_alt) =
         super::super::super::request_rewrite::compute_upstream_url(upstream_base.as_str(), path);
-    let candidate_count = candidates.len();
+    let url_alt = if local_direct_mode {
+        None
+    } else {
+        computed_url_alt
+    };
     let account_max_inflight = super::super::super::account_max_inflight_limit();
     let anthropic_has_prompt_cache_key =
         protocol_type == PROTOCOL_ANTHROPIC_NATIVE && has_prompt_cache_key;
@@ -65,6 +73,7 @@ pub(in super::super) fn prepare_request_setup(
         key_id,
         model_for_log,
     );
+    let candidate_count = candidates.len();
     let candidate_order = candidates
         .iter()
         .map(|(account, _)| format!("{}#sort={}", account.id, account.sort))

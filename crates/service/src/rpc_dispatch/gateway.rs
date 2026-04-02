@@ -14,6 +14,19 @@ use serde_json::Value;
 /// 返回函数执行结果
 pub(super) fn try_handle(req: &JsonRpcRequest) -> Option<JsonRpcResponse> {
     let result = match req.method.as_str() {
+        "gateway/mode/get" => super::as_json(serde_json::json!({
+            "mode": crate::current_gateway_mode(),
+            "options": crate::gateway_mode_options(),
+        })),
+        "gateway/mode/set" => {
+            let mode = super::str_param(req, "mode").unwrap_or("");
+            super::value_or_error(crate::set_gateway_mode(mode).map(|applied| {
+                serde_json::json!({
+                    "mode": applied,
+                    "options": crate::gateway_mode_options(),
+                })
+            }))
+        }
         "gateway/routeStrategy/get" => {
             let strategy = crate::gateway::current_route_strategy();
             super::as_json(serde_json::json!({

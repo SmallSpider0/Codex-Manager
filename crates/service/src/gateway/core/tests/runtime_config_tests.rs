@@ -119,12 +119,70 @@ fn reload_from_env_updates_timeout_and_proxy() {
 fn reload_from_env_defaults_account_max_inflight_to_one() {
     let _guard = crate::test_env_guard();
     let _guard = EnvGuard::clear(ENV_ACCOUNT_MAX_INFLIGHT);
+    let _gateway_mode_guard = EnvGuard::clear(ENV_GATEWAY_MODE);
     let _request_compression_guard = EnvGuard::clear(ENV_ENABLE_REQUEST_COMPRESSION);
 
     reload_from_env();
 
     assert_eq!(account_max_inflight_limit(), 1);
     assert!(request_compression_enabled());
+    assert_eq!(current_gateway_mode(), GATEWAY_MODE_LOCAL_DIRECT);
+}
+
+/// 函数 `local_direct_mode_disables_proxy_pool`
+///
+/// 作者: gaohongshun
+///
+/// 时间: 2026-04-02
+///
+/// # 参数
+/// 无
+///
+/// # 返回
+/// 无
+#[test]
+fn local_direct_mode_disables_proxy_pool() {
+    let _guard = crate::test_env_guard();
+    let _gateway_mode_guard = EnvGuard::set(ENV_GATEWAY_MODE, GATEWAY_MODE_LOCAL_DIRECT);
+    let _proxy_url_guard = EnvGuard::clear(ENV_UPSTREAM_PROXY_URL);
+    let _proxy_list_guard = EnvGuard::set(
+        ENV_PROXY_LIST,
+        "http://p1:8080,http://p2:8080,http://p3:8080",
+    );
+
+    reload_from_env();
+
+    let pool = build_upstream_client_pool();
+    assert!(pool.clients.is_empty());
+    assert!(pool.proxies.is_empty());
+}
+
+/// 函数 `relay_compat_mode_keeps_proxy_pool`
+///
+/// 作者: gaohongshun
+///
+/// 时间: 2026-04-02
+///
+/// # 参数
+/// 无
+///
+/// # 返回
+/// 无
+#[test]
+fn relay_compat_mode_keeps_proxy_pool() {
+    let _guard = crate::test_env_guard();
+    let _gateway_mode_guard = EnvGuard::set(ENV_GATEWAY_MODE, GATEWAY_MODE_RELAY_COMPAT);
+    let _proxy_url_guard = EnvGuard::clear(ENV_UPSTREAM_PROXY_URL);
+    let _proxy_list_guard = EnvGuard::set(
+        ENV_PROXY_LIST,
+        "http://p1:8080,http://p2:8080,http://p3:8080",
+    );
+
+    reload_from_env();
+
+    let pool = build_upstream_client_pool();
+    assert_eq!(pool.clients.len(), 3);
+    assert_eq!(pool.proxies.len(), 3);
 }
 
 /// 函数 `parse_proxy_list_env_limits_to_five_entries`

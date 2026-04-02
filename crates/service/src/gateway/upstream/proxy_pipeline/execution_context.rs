@@ -14,6 +14,7 @@ pub(in super::super) struct GatewayUpstreamExecutionContext<'a> {
     reasoning_for_log: Option<&'a str>,
     candidate_count: usize,
     account_max_inflight: usize,
+    local_direct_mode: bool,
 }
 
 impl<'a> GatewayUpstreamExecutionContext<'a> {
@@ -42,6 +43,7 @@ impl<'a> GatewayUpstreamExecutionContext<'a> {
         reasoning_for_log: Option<&'a str>,
         candidate_count: usize,
         account_max_inflight: usize,
+        local_direct_mode: bool,
     ) -> Self {
         Self {
             trace_id,
@@ -56,6 +58,7 @@ impl<'a> GatewayUpstreamExecutionContext<'a> {
             reasoning_for_log,
             candidate_count,
             account_max_inflight,
+            local_direct_mode,
         }
     }
 
@@ -72,6 +75,21 @@ impl<'a> GatewayUpstreamExecutionContext<'a> {
     /// 返回函数执行结果
     pub(in super::super) fn has_more_candidates(&self, idx: usize) -> bool {
         idx + 1 < self.candidate_count
+    }
+
+    /// 函数 `has_more_attempt_candidates`
+    ///
+    /// 作者: gaohongshun
+    ///
+    /// 时间: 2026-04-02
+    ///
+    /// # 参数
+    /// - in super: 参数 in super
+    ///
+    /// # 返回
+    /// 返回函数执行结果
+    pub(in super::super) fn has_more_attempt_candidates(&self, idx: usize) -> bool {
+        !self.local_direct_mode && self.has_more_candidates(idx)
     }
 
     /// 函数 `should_skip_candidate`
@@ -95,6 +113,7 @@ impl<'a> GatewayUpstreamExecutionContext<'a> {
             idx,
             self.candidate_count,
             self.account_max_inflight,
+            self.local_direct_mode,
         )
     }
 

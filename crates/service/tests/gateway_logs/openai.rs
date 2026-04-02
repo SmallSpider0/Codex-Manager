@@ -2467,6 +2467,7 @@ fn gateway_invalid_refresh_token_marks_first_account_unavailable_and_fails_over(
     let db_path: PathBuf = dir.join("codexmanager.db");
 
     let _db_guard = EnvGuard::set("CODEXMANAGER_DB_PATH", db_path.to_string_lossy().as_ref());
+    let _gateway_mode_guard = EnvGuard::set("CODEXMANAGER_GATEWAY_MODE", "relay_compat");
 
     let first_response = serde_json::json!({
         "error": {
@@ -2629,6 +2630,167 @@ fn gateway_invalid_refresh_token_marks_first_account_unavailable_and_fails_over(
 
     let bad_account = storage
         .find_account_by_id("acc_refresh_bad")
+        .expect("find first account")
+        .expect("first account exists");
+    assert_eq!(bad_account.status, "unavailable");
+}
+
+/// 函数 `gateway_invalid_refresh_token_in_local_direct_does_not_fail_over`
+///
+/// 作者: gaohongshun
+///
+/// 时间: 2026-04-02
+///
+/// # 参数
+/// 无
+///
+/// # 返回
+/// 无
+#[test]
+fn gateway_invalid_refresh_token_in_local_direct_does_not_fail_over() {
+    let _lock = test_env_guard();
+    let dir = new_test_dir("codexmanager-gateway-invalid-refresh-local-direct");
+    let db_path: PathBuf = dir.join("codexmanager.db");
+
+    let _db_guard = EnvGuard::set("CODEXMANAGER_DB_PATH", db_path.to_string_lossy().as_ref());
+    let _gateway_mode_guard = EnvGuard::set("CODEXMANAGER_GATEWAY_MODE", "local_direct");
+
+    let first_response = serde_json::json!({
+        "error": {
+            "message": "expired access token",
+            "type": "authentication_error"
+        }
+    });
+    let refresh_response = serde_json::json!({
+        "error": "invalid_grant"
+    });
+    let second_response = serde_json::json!({
+        "id": "resp_should_not_be_used",
+        "model": "gpt-5.3-codex",
+        "output": [{
+            "type": "message",
+            "role": "assistant",
+            "content": [{ "type": "output_text", "text": "unexpected failover" }]
+        }],
+        "usage": { "input_tokens": 5, "output_tokens": 4, "total_tokens": 9 }
+    });
+    let body_401 = serde_json::to_string(&first_response).expect("serialize first response");
+    let body_refresh =
+        serde_json::to_string(&refresh_response).expect("serialize refresh response");
+    let body_200 = serde_json::to_string(&second_response).expect("serialize second response");
+    let (upstream_addr, upstream_rx, upstream_join) =
+        start_mock_upstream_sequence(vec![(401, body_401), (401, body_refresh), (200, body_200)]);
+
+    let upstream_base = format!("http://{upstream_addr}/chatgpt.com/backend-api/codex");
+    let issuer = format!("http://{upstream_addr}");
+    let _upstream_guard = EnvGuard::set("CODEXMANAGER_UPSTREAM_BASE_URL", &upstream_base);
+    let _issuer_guard = EnvGuard::set("CODEXMANAGER_ISSUER", &issuer);
+    let _client_id_guard = EnvGuard::set("CODEXMANAGER_CLIENT_ID", "client-test-refresh");
+
+    let storage = Storage::open(&db_path).expect("open db");
+    storage.init().expect("init db");
+    let now = now_ts();
+
+    storage
+        .insert_account(&Account {
+            id: "acc_refresh_bad_local".to_string(),
+            label: "refresh-bad-local".to_string(),
+            issuer: issuer.clone(),
+            chatgpt_account_id: Some("chatgpt-refresh-bad-local".to_string()),
+            workspace_id: None,
+            group_name: None,
+            sort: 1,
+            status: "active".to_string(),
+            created_at: now,
+            updated_at: now,
+        })
+        .expect("insert first account");
+    storage
+        .insert_token(&Token {
+            account_id: "acc_refresh_bad_local".to_string(),
+            id_token: String::new(),
+            access_token: "access_token_old_bad_local".to_string(),
+            refresh_token: "refresh_token_bad_local".to_string(),
+            api_key_access_token: None,
+            last_refresh: now,
+        })
+        .expect("insert first token");
+    storage
+        .insert_account(&Account {
+            id: "acc_refresh_good_local".to_string(),
+            label: "refresh-good-local".to_string(),
+            issuer: issuer.clone(),
+            chatgpt_account_id: Some("chatgpt-refresh-good-local".to_string()),
+            workspace_id: None,
+            group_name: None,
+            sort: 2,
+            status: "active".to_string(),
+            created_at: now + 1,
+            updated_at: now + 1,
+        })
+        .expect("insert second account");
+    storage
+        .insert_token(&Token {
+            account_id: "acc_refresh_good_local".to_string(),
+            id_token: String::new(),
+            access_token: "access_token_good_local".to_string(),
+            refresh_token: String::new(),
+            api_key_access_token: None,
+            last_refresh: now + 1,
+        })
+        .expect("insert second token");
+
+    let platform_key = "pk_openai_invalid_refresh_local_direct";
+    storage
+        .insert_api_key(&ApiKey {
+            id: "gk_openai_invalid_refresh_local_direct".to_string(),
+            name: Some("openai-invalid-refresh-local-direct".to_string()),
+            model_slug: Some("gpt-5.3-codex".to_string()),
+            reasoning_effort: None,
+            service_tier: None,
+            rotation_strategy: "account_rotation".to_string(),
+            aggregate_api_id: None,
+            aggregate_api_url: None,
+            client_type: "codex".to_string(),
+            protocol_type: "openai_compat".to_string(),
+            auth_scheme: "authorization_bearer".to_string(),
+            upstream_base_url: None,
+            static_headers_json: None,
+            key_hash: hash_platform_key_for_test(platform_key),
+            status: "active".to_string(),
+            created_at: now,
+            last_used_at: None,
+        })
+        .expect("insert api key");
+
+    let server = codexmanager_service::start_one_shot_server().expect("start server");
+    let req_body =
+        r#"{"model":"gpt-5.3-codex","input":"hello","stream":false,"service_tier":"priority"}"#;
+    let (status, response_body) = post_http_raw(
+        &server.addr,
+        "/v1/responses",
+        req_body,
+        &[
+            ("Content-Type", "application/json"),
+            ("Authorization", &format!("Bearer {platform_key}")),
+        ],
+    );
+    server.join();
+    assert_eq!(status, 401, "gateway response: {response_body}");
+
+    let first = upstream_rx
+        .recv_timeout(Duration::from_secs(2))
+        .expect("receive first upstream request");
+    let second = upstream_rx
+        .recv_timeout(Duration::from_secs(2))
+        .expect("receive refresh request");
+    upstream_join.join().expect("join mock upstream");
+
+    assert_eq!(first.path, "/chatgpt.com/backend-api/codex/responses");
+    assert_eq!(second.path, "/oauth/token");
+
+    let bad_account = storage
+        .find_account_by_id("acc_refresh_bad_local")
         .expect("find first account")
         .expect("first account exists");
     assert_eq!(bad_account.status, "unavailable");

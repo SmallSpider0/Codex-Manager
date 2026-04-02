@@ -102,6 +102,11 @@ const SERVICE_LISTEN_MODE_LABELS: Record<string, string> = {
   all_interfaces: "全部网卡 (0.0.0.0)",
 };
 
+const GATEWAY_MODE_LABELS: Record<string, string> = {
+  local_direct: "本机直连优先 (Local Direct)",
+  relay_compat: "兼容中继 (Relay Compat)",
+};
+
 const RESIDENCY_REQUIREMENT_LABELS: Record<string, string> = {
   "": "不限制",
   us: "仅美国 (us)",
@@ -672,6 +677,8 @@ export default function SettingsPage() {
     enabled: isSnapshotQueryEnabled && isPageActive,
   });
   const snapshot = fetchedSnapshot ?? storedSettings;
+  const isLocalDirectMode =
+    (snapshot?.gatewayMode || "local_direct") !== "relay_compat";
   usePageTransitionReady(
     "/settings/",
     !canAccessManagementRpc || Boolean(snapshot) || isSnapshotError,
@@ -1785,9 +1792,49 @@ export default function SettingsPage() {
           <Card className="glass-card border-none shadow-md">
             <CardHeader>
               <CardTitle className="text-base">网关策略</CardTitle>
-              <CardDescription>配置账号选路和请求头处理方式</CardDescription>
+              <CardDescription>
+                配置本机直连或兼容中继模式，以及相关请求头策略
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+              <div className="grid gap-2">
+                <Label>网关模式</Label>
+                <Select
+                  value={snapshot.gatewayMode || "local_direct"}
+                  onValueChange={(value) =>
+                    updateSettings.mutate({
+                      gatewayMode: value || "local_direct",
+                    })
+                  }
+                >
+                  <SelectTrigger className="w-full md:w-[320px]">
+                    <SelectValue placeholder="选择网关模式">
+                      {(value) => {
+                        const nextValue = String(value || "").trim();
+                        if (!nextValue) return "选择网关模式";
+                        return GATEWAY_MODE_LABELS[nextValue] || nextValue;
+                      }}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(snapshot.gatewayModeOptions?.length
+                      ? snapshot.gatewayModeOptions
+                      : ["local_direct", "relay_compat"]
+                    ).map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {GATEWAY_MODE_LABELS[value] || value}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground">
+                  本机直连优先会把主链路收敛成单账号、单出口、无聚合中继的本机直连适配层；
+                  兼容中继会恢复多账号候选、聚合 API 和更完整的旧网关行为。
+                  其中 <code>accountMaxInflight</code> 在直连模式下表示“单账号硬并发上限”，
+                  超过后新请求会直接选下一个可接单账号。
+                </p>
+              </div>
+
               <div className="grid gap-2">
                 <Label>账号选路策略</Label>
                 <Select
@@ -1813,9 +1860,9 @@ export default function SettingsPage() {
                   </SelectContent>
                 </Select>
                 <p className="text-[10px] text-muted-foreground">
-                  顺序优先：按账号候选顺序优先尝试，默认只会在头部小窗口内按健康度做轻微换头；
-                  均衡轮询：按“平台密钥 +
-                  模型”维度严格轮询可用账号，默认不做健康度换头。
+                  {isLocalDirectMode
+                    ? "本机直连优先模式下，这个选项仍会影响“新请求先挑哪个可接单账号”；但请求一旦真正发出，就不会再在同一请求里切到第二个账号。"
+                    : "顺序优先：按账号候选顺序优先尝试，默认只会在头部小窗口内按健康度做轻微换头；均衡轮询：按“平台密钥 + 模型”维度严格轮询可用账号，默认不做健康度换头。"}
                 </p>
               </div>
 
@@ -1873,6 +1920,7 @@ export default function SettingsPage() {
               <div className="grid gap-2 border-t pt-6">
                 <Label>Originator</Label>
                 <Input
+                  disabled={isLocalDirectMode}
                   className="h-10 max-w-md font-mono"
                   value={gatewayOriginatorInput}
                   onChange={(event) =>
@@ -1896,14 +1944,23 @@ export default function SettingsPage() {
                   }}
                 />
                 <p className="text-[10px] text-muted-foreground">
-                  对齐官方 Codex 的上游 Originator。默认值为{" "}
-                  <code>codex_cli_rs</code>，会同步影响登录和网关上游请求头。
+                  {isLocalDirectMode ? (
+                    <>
+                      本机直连优先模式下主链路固定按 Codex 兼容值出站，这里的自定义不会影响主请求。
+                    </>
+                  ) : (
+                    <>
+                      对齐官方 Codex 的上游 Originator。默认值为{" "}
+                      <code>codex_cli_rs</code>，会同步影响登录和网关上游请求头。
+                    </>
+                  )}
                 </p>
               </div>
 
               <div className="grid gap-2">
                 <Label>User-Agent 版本</Label>
                 <Input
+                  disabled={isLocalDirectMode}
                   className="h-10 max-w-md font-mono"
                   value={gatewayUserAgentVersionInput}
                   onChange={(event) =>
@@ -1927,8 +1984,16 @@ export default function SettingsPage() {
                   }}
                 />
                 <p className="text-[10px] text-muted-foreground">
-                  控制真实出站 <code>User-Agent</code> 里的版本号，默认值为{" "}
-                  <code>0.101.0</code>。 官方 Codex 升级后，可以在这里手动同步。
+                  {isLocalDirectMode ? (
+                    <>
+                      本机直连优先模式下主链路固定沿用兼容版本，这里的自定义只在兼容中继模式下参与主请求。
+                    </>
+                  ) : (
+                    <>
+                      控制真实出站 <code>User-Agent</code> 里的版本号，默认值为{" "}
+                      <code>0.101.0</code>。 官方 Codex 升级后，可以在这里手动同步。
+                    </>
+                  )}
                 </p>
               </div>
 
@@ -2004,7 +2069,9 @@ export default function SettingsPage() {
                   }}
                 />
                 <p className="text-[10px] text-muted-foreground">
-                  支持 http/https/socks5，留空表示直连。
+                  {isLocalDirectMode
+                    ? "本机直连优先模式下只会使用这里配置的单一显式代理；不会再启用代理池轮换。"
+                    : "支持 http/https/socks5，留空表示直连。"}
                 </p>
               </div>
 

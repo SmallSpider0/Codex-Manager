@@ -357,6 +357,51 @@ pub(crate) fn current_route_strategy() -> &'static str {
     route_hint::current_route_strategy()
 }
 
+/// 函数 `current_gateway_mode`
+///
+/// 作者: gaohongshun
+///
+/// 时间: 2026-04-02
+///
+/// # 参数
+/// 无
+///
+/// # 返回
+/// 返回函数执行结果
+pub(crate) fn current_gateway_mode() -> String {
+    runtime_config::current_gateway_mode()
+}
+
+/// 函数 `is_local_direct_mode`
+///
+/// 作者: gaohongshun
+///
+/// 时间: 2026-04-02
+///
+/// # 参数
+/// 无
+///
+/// # 返回
+/// 返回函数执行结果
+pub(crate) fn is_local_direct_mode() -> bool {
+    runtime_config::is_local_direct_mode()
+}
+
+/// 函数 `set_gateway_mode`
+///
+/// 作者: gaohongshun
+///
+/// 时间: 2026-04-02
+///
+/// # 参数
+/// - mode: 参数 mode
+///
+/// # 返回
+/// 返回函数执行结果
+pub(crate) fn set_gateway_mode(mode: &str) -> Result<String, String> {
+    runtime_config::set_gateway_mode(mode)
+}
+
 /// 函数 `set_route_strategy`
 ///
 /// 作者: gaohongshun

@@ -128,6 +128,42 @@ pub(in super::super) fn proxy_validated_request(
     );
     super::super::trace_log::log_request_body_preview(trace_id.as_str(), body.as_ref());
 
+    if rotation_strategy == ROTATION_AGGREGATE_API && super::super::is_local_direct_mode() {
+        let message =
+            "aggregate api relay requires relay_compat mode; switch gateway.mode first".to_string();
+        super::super::record_gateway_request_outcome(path.as_str(), 409, Some("gateway_mode"));
+        super::super::trace_log::log_request_final(
+            trace_id.as_str(),
+            409,
+            Some(key_id.as_str()),
+            None,
+            Some(message.as_str()),
+            started_at.elapsed().as_millis(),
+        );
+        super::super::write_request_log(
+            &storage,
+            super::super::request_log::RequestLogTraceContext {
+                trace_id: Some(trace_id.as_str()),
+                original_path: Some(original_path.as_str()),
+                adapted_path: Some(path.as_str()),
+                response_adapter: Some(super::super::ResponseAdapter::Passthrough),
+                ..Default::default()
+            },
+            Some(key_id.as_str()),
+            None,
+            path.as_str(),
+            request_method.as_str(),
+            model_for_log.as_deref(),
+            reasoning_for_log.as_deref(),
+            None,
+            Some(409),
+            super::super::request_log::RequestLogUsage::default(),
+            Some(message.as_str()),
+            Some(started_at.elapsed().as_millis()),
+        );
+        return respond_terminal(request, 409, message, Some(trace_id.as_str()));
+    }
+
     if rotation_strategy == ROTATION_AGGREGATE_API {
         let mut aggregate_api_candidates =
             match super::protocol::aggregate_api::resolve_aggregate_api_rotation_candidates(
@@ -279,11 +315,15 @@ pub(in super::super) fn proxy_validated_request(
         reasoning_for_log.as_deref(),
         setup.candidate_count,
         setup.account_max_inflight,
+        super::super::is_local_direct_mode(),
     );
     let allow_openai_fallback = false;
-    let disable_challenge_stateless_retry = !(protocol_type == PROTOCOL_ANTHROPIC_NATIVE
-        && body.len() <= 2 * 1024)
-        && !path.starts_with("/v1/responses");
+    let disable_challenge_stateless_retry = if super::super::is_local_direct_mode() {
+        true
+    } else {
+        !(protocol_type == PROTOCOL_ANTHROPIC_NATIVE && body.len() <= 2 * 1024)
+            && !path.starts_with("/v1/responses")
+    };
     let _request_gate_guard = acquire_request_gate(
         trace_id.as_str(),
         key_id.as_str(),
@@ -347,6 +387,15 @@ pub(in super::super) fn proxy_validated_request(
         skipped_inflight,
         last_attempt_error.as_deref(),
     );
+    let local_direct_all_busy = super::super::is_local_direct_mode()
+        && attempted_account_ids.is_empty()
+        && skipped_inflight > 0
+        && skipped_cooldown == 0;
+    let user_message = if local_direct_all_busy {
+        "all local direct accounts are busy; try again shortly"
+    } else {
+        "no available account"
+    };
 
     context.log_final_result(
         None,
@@ -360,7 +409,7 @@ pub(in super::super) fn proxy_validated_request(
     respond_terminal(
         request,
         503,
-        "no available account".to_string(),
+        user_message.to_string(),
         Some(trace_id.as_str()),
     )
 }

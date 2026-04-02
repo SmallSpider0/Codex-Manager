@@ -204,6 +204,7 @@ pub(in super::super) fn execute_candidate_sequence(
 
         let mut inflight_guard = Some(super::super::super::acquire_account_inflight(&account.id));
         let mut attempt_trace = CandidateAttemptTrace::default();
+        let has_more_attempt_candidates = context.has_more_attempt_candidates(idx);
         let decision = run_candidate_attempt(CandidateAttemptParams {
             storage,
             method,
@@ -219,7 +220,7 @@ pub(in super::super) fn execute_candidate_sequence(
             debug,
             allow_openai_fallback,
             disable_challenge_stateless_retry,
-            has_more_candidates: context.has_more_candidates(idx),
+            has_more_candidates: has_more_attempt_candidates,
             context,
             setup,
             trace: &mut attempt_trace,
@@ -282,7 +283,7 @@ pub(in super::super) fn execute_candidate_sequence(
                         debug,
                         allow_openai_fallback,
                         disable_challenge_stateless_retry,
-                        has_more_candidates: context.has_more_candidates(idx),
+                        has_more_candidates: has_more_attempt_candidates,
                         context,
                         setup,
                         trace: &mut attempt_trace,
@@ -344,7 +345,7 @@ pub(in super::super) fn execute_candidate_sequence(
                     started_at,
                     attempt_model_for_log,
                     Some(attempted_account_ids.as_slice()),
-                    context.has_more_candidates(idx),
+                    has_more_attempt_candidates,
                 )? {
                     FinalizeUpstreamResponseOutcome::Handled => {
                         if let Err(err) = super::super::super::conversation_binding::record_conversation_binding_terminal_response(

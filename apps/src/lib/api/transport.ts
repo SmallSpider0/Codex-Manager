@@ -118,6 +118,8 @@ const WEB_COMMAND_MAP: Record<string, WebCommandDescriptor> = {
   service_gateway_transport_set: { rpcMethod: "gateway/transport/set" },
   service_gateway_upstream_proxy_get: { rpcMethod: "gateway/upstreamProxy/get" },
   service_gateway_upstream_proxy_set: { rpcMethod: "gateway/upstreamProxy/set" },
+  service_gateway_mode_get: { rpcMethod: "gateway/mode/get" },
+  service_gateway_mode_set: { rpcMethod: "gateway/mode/set" },
   service_gateway_route_strategy_get: { rpcMethod: "gateway/routeStrategy/get" },
   service_gateway_route_strategy_set: { rpcMethod: "gateway/routeStrategy/set" },
   service_gateway_manual_account_get: { rpcMethod: "gateway/manualAccount/get" },

@@ -44,6 +44,8 @@ macro_rules! invoke_handler {
             // settings
             crate::commands::settings::service_listen::service_listen_config_get,
             crate::commands::settings::service_listen::service_listen_config_set,
+            crate::commands::settings::gateway::service_gateway_mode_get,
+            crate::commands::settings::gateway::service_gateway_mode_set,
             crate::commands::settings::gateway::service_gateway_route_strategy_get,
             crate::commands::settings::gateway::service_gateway_route_strategy_set,
             crate::commands::settings::gateway::service_gateway_manual_account_get,

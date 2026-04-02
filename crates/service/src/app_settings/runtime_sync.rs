@@ -6,8 +6,8 @@ use super::{
     parse_bool_with_default, persisted_env_overrides_missing_process_env,
     reload_runtime_after_env_override_apply, set_service_bind_mode, BackgroundTasksInput,
     APP_SETTING_GATEWAY_ACCOUNT_MAX_INFLIGHT_KEY, APP_SETTING_GATEWAY_BACKGROUND_TASKS_KEY,
-    APP_SETTING_GATEWAY_FREE_ACCOUNT_MAX_MODEL_KEY, APP_SETTING_GATEWAY_ORIGINATOR_KEY,
-    APP_SETTING_GATEWAY_REQUEST_COMPRESSION_ENABLED_KEY,
+    APP_SETTING_GATEWAY_FREE_ACCOUNT_MAX_MODEL_KEY, APP_SETTING_GATEWAY_MODE_KEY,
+    APP_SETTING_GATEWAY_ORIGINATOR_KEY, APP_SETTING_GATEWAY_REQUEST_COMPRESSION_ENABLED_KEY,
     APP_SETTING_GATEWAY_RESIDENCY_REQUIREMENT_KEY, APP_SETTING_GATEWAY_ROUTE_STRATEGY_KEY,
     APP_SETTING_GATEWAY_SSE_KEEPALIVE_INTERVAL_MS_KEY, APP_SETTING_GATEWAY_UPSTREAM_PROXY_URL_KEY,
     APP_SETTING_GATEWAY_UPSTREAM_STREAM_TIMEOUT_MS_KEY, APP_SETTING_GATEWAY_USER_AGENT_VERSION_KEY,
@@ -76,6 +76,15 @@ pub fn sync_runtime_settings_from_storage() {
             if let Some(strategy) = normalize_optional_text(Some(strategy)) {
                 if let Err(err) = gateway::set_route_strategy(&strategy) {
                     log::warn!("sync persisted route strategy failed: {err}");
+                }
+            }
+        }
+    }
+    if !process_env_has_value("CODEXMANAGER_GATEWAY_MODE") {
+        if let Some(mode) = settings.get(APP_SETTING_GATEWAY_MODE_KEY) {
+            if let Some(mode) = normalize_optional_text(Some(mode)) {
+                if let Err(err) = gateway::set_gateway_mode(&mode) {
+                    log::warn!("sync persisted gateway mode failed: {err}");
                 }
             }
         }

@@ -71,6 +71,9 @@ export const serviceClient = {
     return normalizeStartupSnapshot(result);
   },
 
+  getGatewayMode: () => invoke<unknown>("service_gateway_mode_get", withAddr()),
+  setGatewayMode: (mode: string) =>
+    invoke("service_gateway_mode_set", withAddr({ mode })),
   getGatewayTransport: () => invoke<unknown>("service_gateway_transport_get", withAddr()),
   setGatewayTransport: (settings: Record<string, unknown>) =>
     invoke("service_gateway_transport_set", withAddr(settings)),

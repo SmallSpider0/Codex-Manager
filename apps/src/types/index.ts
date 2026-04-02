@@ -358,6 +358,8 @@ export interface AppSettings {
   serviceAddr: string;
   serviceListenMode: string;
   serviceListenModeOptions: string[];
+  gatewayMode: string;
+  gatewayModeOptions: string[];
   routeStrategy: string;
   routeStrategyOptions: string[];
   freeAccountMaxModel: string;

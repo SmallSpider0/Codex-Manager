@@ -12,6 +12,45 @@ use crate::commands::shared::rpc_call_in_background;
 /// # 返回
 /// 返回函数执行结果
 #[tauri::command]
+pub async fn service_gateway_mode_get(
+    addr: Option<String>,
+) -> Result<serde_json::Value, String> {
+    rpc_call_in_background("gateway/mode/get", addr, None).await
+}
+
+/// 函数 `service_gateway_mode_set`
+///
+/// 作者: gaohongshun
+///
+/// 时间: 2026-04-02
+///
+/// # 参数
+/// - addr: 参数 addr
+/// - mode: 参数 mode
+///
+/// # 返回
+/// 返回函数执行结果
+#[tauri::command]
+pub async fn service_gateway_mode_set(
+    addr: Option<String>,
+    mode: String,
+) -> Result<serde_json::Value, String> {
+    let params = serde_json::json!({ "mode": mode });
+    rpc_call_in_background("gateway/mode/set", addr, Some(params)).await
+}
+
+/// 函数 `service_gateway_route_strategy_get`
+///
+/// 作者: gaohongshun
+///
+/// 时间: 2026-04-02
+///
+/// # 参数
+/// - addr: 参数 addr
+///
+/// # 返回
+/// 返回函数执行结果
+#[tauri::command]
 pub async fn service_gateway_route_strategy_get(
     addr: Option<String>,
 ) -> Result<serde_json::Value, String> {
